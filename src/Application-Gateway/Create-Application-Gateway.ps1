@@ -41,20 +41,24 @@ $publicIpId = (Invoke-Executable az network public-ip show --resource-group $App
 
 Write-Host "PublicIp: $publicIpId"
 
+if ($ApplicationGatewaySku -contains "WAF")
+{
+    $wafId = (Invoke-Executable -AllowToFail az network application-gateway waf-policy show --name $WafName --resource-group $ResourceGroupName).id
+    if(!$wafId)
+    {
+        $wafId = (Invoke-Executable az network application-gateway waf-policy create --name $WafName --resource-group $ResourceGroupName --type $WafRuleSetType --version $WafRuleSetVersion | ConvertFrom-Json).id
+    }
+   # Invoke-Executable az network application-gateway waf-config set --resource-group $ApplicationGatewayResourceGroupName --gateway-name $ApplicationGatewayName --enabled true --firewall-mode $wafMode --rule-set-type $WafRuleSetType --rule-set-version $WafRuleSetVersion
+}
+
 $applicationGatewayId = (Invoke-Executable -AllowToFail az network application-gateway show --name $ApplicationGatewayName --resource-group $ApplicationGatewayResourceGroupName | ConvertFrom-Json).id
 
 if (!$applicationGatewayId)
 {
-    Invoke-Executable az network application-gateway create --name $ApplicationGatewayName --resource-group $ApplicationGatewayResourceGroupName --subnet $gatewaySubnetId --capacity $ApplicationGatewayCapacity --sku $ApplicationGatewaySku --http-settings-cookie-based-affinity Enabled --frontend-port 80 --http-settings-port 80 --http-settings-protocol Http --public-ip-address $publicIpId --priority 10
+    Invoke-Executable az network application-gateway create --name $ApplicationGatewayName --resource-group $ApplicationGatewayResourceGroupName --subnet $gatewaySubnetId --capacity $ApplicationGatewayCapacity --sku $ApplicationGatewaySku --waf-policy $wafId --http-settings-cookie-based-affinity Enabled --frontend-port 80 --http-settings-port 80 --http-settings-protocol Http --public-ip-address $publicIpId --priority 10
 }
 
 $applicationGatewayId = (Invoke-Executable az network application-gateway show --name $ApplicationGatewayName --resource-group $ApplicationGatewayResourceGroupName | ConvertFrom-Json).id
-
-# Update Tags
-if ($ResourceTags)
-{
-    Set-ResourceTagsForResource -ResourceId $applicationGatewayId -ResourceTags ${ResourceTags}
-}
 
 if ($ApplicationGatewaySku -contains "WAF")
 {
@@ -63,8 +67,13 @@ if ($ApplicationGatewaySku -contains "WAF")
     {
         $wafMode = "Prevention"
     }
+    az network application-gateway waf-config set --resource-group $ApplicationGatewayResourceGroupName --gateway-name $ApplicationGatewayName --enabled true --firewall-mode $wafMode --rule-set-version $WafRuleSetVersion
+}
 
-    Invoke-Executable az network application-gateway waf-config set --resource-group $ApplicationGatewayResourceGroupName --gateway-name $ApplicationGatewayName --enabled true --firewall-mode $wafMode --rule-set-type $WafRuleSetType --rule-set-version $WafRuleSetVersion
+# Update Tags
+if ($ResourceTags)
+{
+    Set-ResourceTagsForResource -ResourceId $applicationGatewayId -ResourceTags ${ResourceTags}
 }
 
 Invoke-Executable az identity create --name "useridentity-$ApplicationGatewayName" --resource-group $ApplicationGatewayResourceGroupName
